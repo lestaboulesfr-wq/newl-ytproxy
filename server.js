@@ -35,8 +35,9 @@ app.get('/stream', (req, res) => {
         '-o', '-',
         '--no-playlist',
         '--quiet',
-        '--extractor-args', 'youtube:player_client=android',
+        '--extractor-args', 'youtube:player_client=mweb',
     ];
+    if (cookiesPath) args.push('--cookies', cookiesPath);
     args.push(url);
 
     const ytdlp = spawn('python3', args);
