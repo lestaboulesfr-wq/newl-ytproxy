@@ -1,8 +1,19 @@
 const express = require('express');
 const { spawn } = require('child_process');
+const fs   = require('fs');
+const os   = require('os');
+const path = require('path');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
+
+// Écrire les cookies dans un fichier temporaire au démarrage
+let cookiesPath = null;
+if (process.env.YOUTUBE_COOKIES) {
+    cookiesPath = path.join(os.tmpdir(), 'yt_cookies.txt');
+    fs.writeFileSync(cookiesPath, process.env.YOUTUBE_COOKIES, 'utf8');
+    console.log('[ytproxy] Cookies YouTube chargés depuis env');
+}
 
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,7 +21,7 @@ app.use((req, res, next) => {
 });
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', port: String(PORT) });
+    res.json({ status: 'ok', port: String(PORT), cookies: !!cookiesPath });
 });
 
 app.get('/stream', (req, res) => {
@@ -19,14 +30,17 @@ app.get('/stream', (req, res) => {
 
     console.log('[ytproxy] Requête stream :', url);
 
-    const ytdlp = spawn('python3', [
+    const args = [
         '-m', 'yt_dlp',
         '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
         '-o', '-',
         '--no-playlist',
         '--quiet',
-        url
-    ]);
+    ];
+    if (cookiesPath) args.push('--cookies', cookiesPath);
+    args.push(url);
+
+    const ytdlp = spawn('python3', args);
 
     res.setHeader('Content-Type', 'audio/webm');
     res.setHeader('Transfer-Encoding', 'chunked');
