@@ -6,8 +6,16 @@ const PORT = process.env.PORT || 3001;
 
 const PIPED_INSTANCES = [
     'https://pipedapi.kavin.rocks',
-    'https://api.piped.projectsegfault.net',
-    'https://pipedapi.adminforge.de',
+    'https://pipedapi.darkness.services',
+    'https://piped-api.garudalinux.org',
+    'https://pipedapi.moomoo.me',
+];
+
+const INVIDIOUS_INSTANCES = [
+    'https://invidious.io',
+    'https://yt.cdaut.de',
+    'https://inv.nadeko.net',
+    'https://invidious.flokinet.to',
 ];
 
 function extractVideoId(url) {
@@ -17,15 +25,34 @@ function extractVideoId(url) {
 
 function fetchJson(url) {
     return new Promise((resolve, reject) => {
-        https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+        const req = https.get(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+        }, (res) => {
             let data = '';
             res.on('data', d => data += d);
             res.on('end', () => {
+                if (res.statusCode !== 200)
+                    return reject(new Error(`HTTP ${res.statusCode}: ${data.substring(0, 120)}`));
                 try { resolve(JSON.parse(data)); }
-                catch(e) { reject(new Error('JSON parse error')); }
+                catch(e) { reject(new Error(`JSON invalide: ${data.substring(0, 120)}`)); }
             });
-        }).on('error', reject);
+        });
+        req.setTimeout(8000, () => { req.destroy(); reject(new Error('timeout')); });
+        req.on('error', reject);
     });
+}
+
+async function getAudioUrlPiped(videoId, instance) {
+    const data = await fetchJson(`${instance}/streams/${videoId}`);
+    if (!data.audioStreams || data.audioStreams.length === 0) throw new Error('Aucun flux audio');
+    return data.audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0].url;
+}
+
+async function getAudioUrlInvidious(videoId, instance) {
+    const data = await fetchJson(`${instance}/api/v1/videos/${videoId}?fields=adaptiveFormats`);
+    const formats = (data.adaptiveFormats || []).filter(f => f.type && f.type.startsWith('audio/'));
+    if (formats.length === 0) throw new Error('Aucun flux audio');
+    return formats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0].url;
 }
 
 app.use((req, res, next) => {
@@ -48,19 +75,25 @@ app.get('/stream', async (req, res) => {
 
     for (const instance of PIPED_INSTANCES) {
         try {
-            const data = await fetchJson(`${instance}/streams/${videoId}`);
-            if (data.audioStreams && data.audioStreams.length > 0) {
-                const audio = data.audioStreams
-                    .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
-                console.log('[ytproxy] Redirect audio via', instance);
-                return res.redirect(302, audio.url);
-            }
+            const audioUrl = await getAudioUrlPiped(videoId, instance);
+            console.log('[ytproxy] OK via Piped', instance);
+            return res.redirect(302, audioUrl);
         } catch(e) {
-            console.warn('[ytproxy] Instance', instance, 'échouée:', e.message);
+            console.warn('[ytproxy] Piped', instance, ':', e.message);
         }
     }
 
-    res.status(503).json({ error: 'Toutes les instances Piped ont échoué' });
+    for (const instance of INVIDIOUS_INSTANCES) {
+        try {
+            const audioUrl = await getAudioUrlInvidious(videoId, instance);
+            console.log('[ytproxy] OK via Invidious', instance);
+            return res.redirect(302, audioUrl);
+        } catch(e) {
+            console.warn('[ytproxy] Invidious', instance, ':', e.message);
+        }
+    }
+
+    res.status(503).json({ error: 'Toutes les instances ont échoué' });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
