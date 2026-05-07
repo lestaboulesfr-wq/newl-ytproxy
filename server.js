@@ -1,78 +1,47 @@
-/**
- * newl_ytproxy — Proxy audio YouTube pour xsound/FiveM
- * Lance : node server.js
- * Port  : 3001 (modifiable via variable d'environnement PORT)
- */
-
 const express = require('express');
-const ytdl    = require('@distube/ytdl-core');
+const { spawn } = require('child_process');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
-// CORS — autoriser les requêtes depuis le CEF de FiveM
 app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin',  '*');
-    res.header('Access-Control-Allow-Headers', 'Range, Origin, Content-Type, Accept');
-    res.header('Access-Control-Expose-Headers','Content-Length, Content-Range, Accept-Ranges');
+    res.setHeader('Access-Control-Allow-Origin', '*');
     next();
 });
 
-// GET /stream?url=YOUTUBE_URL  →  stream audio
-app.get('/stream', async (req, res) => {
-    const url = req.query.url;
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', port: String(PORT) });
+});
 
-    if (!url) {
-        return res.status(400).send('Paramètre url manquant');
-    }
-    if (!ytdl.validateURL(url)) {
-        return res.status(400).send('URL YouTube invalide : ' + url);
-    }
+app.get('/stream', (req, res) => {
+    const url = req.query.url;
+    if (!url) return res.status(400).json({ error: 'Missing url parameter' });
 
     console.log('[ytproxy] Requête stream :', url);
 
-    try {
-        const info   = await ytdl.getInfo(url);
-        const format = ytdl.chooseFormat(info.formats, {
-            filter:  'audioonly',
-            quality: 'highestaudio',
-        });
+    const ytdlp = spawn('yt-dlp', [
+        '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
+        '-o', '-',
+        '--no-playlist',
+        '--quiet',
+        url
+    ]);
 
-        if (!format) {
-            return res.status(404).send('Aucun format audio disponible');
-        }
+    res.setHeader('Content-Type', 'audio/webm');
+    res.setHeader('Transfer-Encoding', 'chunked');
 
-        const contentType = format.mimeType ? format.mimeType.split(';')[0] : 'audio/webm';
+    ytdlp.stdout.pipe(res);
 
-        res.header('Content-Type',   contentType);
-        res.header('Accept-Ranges',  'none');
-        res.header('Cache-Control',  'no-cache');
+    let stderrBuf = '';
+    ytdlp.stderr.on('data', (d) => { stderrBuf += d.toString(); });
 
-        const stream = ytdl.downloadFromInfo(info, { format });
+    ytdlp.on('close', (code) => {
+        if (code !== 0) console.error('[ytproxy] yt-dlp erreur (code', code + '):', stderrBuf.slice(-300));
+    });
 
-        stream.pipe(res);
-
-        stream.on('error', (err) => {
-            console.error('[ytproxy] Erreur stream :', err.message);
-            if (!res.headersSent) res.status(500).send('Erreur stream');
-        });
-
-        req.on('close', () => {
-            stream.destroy();
-        });
-
-    } catch (err) {
-        console.error('[ytproxy] Erreur extraction :', err.message);
-        if (!res.headersSent) res.status(500).send('Erreur : ' + err.message);
-    }
-});
-
-// GET /health  →  vérification que le service tourne
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok', port: PORT });
+    req.on('close', () => ytdlp.kill('SIGTERM'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[ytproxy] Service démarré sur le port ${PORT}`);
-    console.log(`[ytproxy] Test : http://localhost:${PORT}/health`);
+    console.log('[ytproxy] Service démarré sur le port', PORT);
 });
