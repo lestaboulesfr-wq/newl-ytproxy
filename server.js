@@ -7,7 +7,6 @@ const path = require('path');
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
-// Écrire les cookies dans un fichier temporaire au démarrage
 let cookiesPath = null;
 if (process.env.YOUTUBE_COOKIES) {
     cookiesPath = path.join(os.tmpdir(), 'yt_cookies.txt');
@@ -38,7 +37,6 @@ app.get('/stream', (req, res) => {
         '--quiet',
         '--extractor-args', 'youtube:player_client=android',
     ];
-    if (cookiesPath) args.push('--cookies', cookiesPath);
     args.push(url);
 
     const ytdlp = spawn('python3', args);
