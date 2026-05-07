@@ -35,14 +35,13 @@ app.get('/stream', (req, res) => {
         '-o', '-',
         '--no-playlist',
         '--quiet',
-        '--extractor-args', 'youtube:player_client=mweb',
+        '--extractor-args', 'youtube:player_client=ios,android_music,tv_simply',
     ];
-    if (cookiesPath) args.push('--cookies', cookiesPath);
     args.push(url);
 
     const ytdlp = spawn('python3', args);
 
-    res.setHeader('Content-Type', 'audio/webm');
+    res.setHeader('Content-Type', 'audio/mp4');
     res.setHeader('Transfer-Encoding', 'chunked');
 
     ytdlp.stdout.pipe(res);
