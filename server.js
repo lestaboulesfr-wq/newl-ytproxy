@@ -19,7 +19,8 @@ app.get('/stream', (req, res) => {
 
     console.log('[ytproxy] Requête stream :', url);
 
-    const ytdlp = spawn('yt-dlp', [
+    const ytdlp = spawn('python3', [
+        '-m', 'yt_dlp',
         '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
         '-o', '-',
         '--no-playlist',
@@ -35,8 +36,14 @@ app.get('/stream', (req, res) => {
     let stderrBuf = '';
     ytdlp.stderr.on('data', (d) => { stderrBuf += d.toString(); });
 
+    ytdlp.on('error', (err) => {
+        console.error('[ytproxy] spawn erreur:', err.message);
+        if (!res.headersSent) res.status(500).json({ error: err.message });
+    });
+
     ytdlp.on('close', (code) => {
-        if (code !== 0) console.error('[ytproxy] yt-dlp erreur (code', code + '):', stderrBuf.slice(-300));
+        if (code !== 0 && code !== null)
+            console.error('[ytproxy] yt-dlp erreur (code', code + '):', stderrBuf.slice(-500));
     });
 
     req.on('close', () => ytdlp.kill('SIGTERM'));
