@@ -32,10 +32,11 @@ app.get('/stream', (req, res) => {
 
     const args = [
         '-m', 'yt_dlp',
-        '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
+        '-f', 'bestaudio',
         '-o', '-',
         '--no-playlist',
         '--quiet',
+        '--extractor-args', 'youtube:player_client=android',
     ];
     if (cookiesPath) args.push('--cookies', cookiesPath);
     args.push(url);
